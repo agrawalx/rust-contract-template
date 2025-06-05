@@ -4,6 +4,9 @@
 use uapi::{HostFn, HostFnImpl as api, ReturnFlags};
 use winterfell::{verify, AcceptableOptions};
 use core::slice;
+use core::result::Result::{Ok, Err};
+use core::fmt;
+use core::panic::PanicInfo;
 use winterfell::{
     math::{fields::f128::BaseElement, FieldElement, ToElements},
     crypto::{hashers::Blake3_256, DefaultRandomCoin, MerkleTree}, 
