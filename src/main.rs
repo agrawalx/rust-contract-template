@@ -2,59 +2,184 @@
 #![no_std]
 
 use uapi::{HostFn, HostFnImpl as api, ReturnFlags};
+use winterfell::{verify, AcceptableOptions};
+use core::slice;
+use winterfell::{
+    math::{fields::f128::BaseElement, FieldElement, ToElements},
+    crypto::{hashers::Blake3_256, DefaultRandomCoin, MerkleTree}, 
+    Air, AirContext, Assertion, EvaluationFrame, FieldElement, ProofOptions, TraceInfo, 
+    TransitionConstraintDegree, ToElements
+};
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
-    // Safety: The unimp instruction is guaranteed to trap
     unsafe {
         core::arch::asm!("unimp");
         core::hint::unreachable_unchecked();
     }
 }
 
-/// This is the constructor which is called once per contract.
 #[no_mangle]
 #[polkavm_derive::polkavm_export]
 pub extern "C" fn deploy() {}
 
-/// This is the regular entry point when the contract is called.
 #[no_mangle]
 #[polkavm_derive::polkavm_export]
 pub extern "C" fn call() {
-    // We want this contract to be called with the following ABI:
-    // function fibonacci(uint32) external pure returns (uint32);
-
-    // ❯ cast calldata "fibonnaci(uint) view returns(uint)" "42" | xxd -r -p | xxd -c 32 -g 1
-    //00000000: 50 7a 10 34 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-    //00000020: 00 00 00 2a
-
-    // The input is abi encoded as follows:
-    // - 4 byte selector
-    // - 32 byte padded integer
-
-    // the actual 4 byte integer is stored at offset 32
-    let mut input = [0u8; 4];
-    api::call_data_copy(&mut input, 32);
-
-    // Note for more complex input, sol! macro can be used to encod and decode input and output
-    // https://docs.rs/alloy-core/0.8.24/alloy_core/sol_types/macro.sol.html
-    let n = u32::from_be_bytes(input);
-    let result = fibonacci(n);
-
-    // pad the result to 32 byte
+    // Expected ABI: verify(bytes calldata proof, bytes calldata publicInputs) returns (bool)
+    
+    // Read input lengths (first 32 bytes = proof length, second 32 = inputs length)
+    let mut len_buf = [0u8; 64];
+    api::call_data_copy(&mut len_buf, 0);
+    
+    let proof_len = u32::from_be_bytes(len_buf[0..4].try_into().unwrap()) as usize;
+    let inputs_len = u32::from_be_bytes(len_buf[32..36].try_into().unwrap()) as usize;
+    
+    // Read actual data (starts at offset 64)
+    let mut input_data = vec![0u8; proof_len + inputs_len];
+    api::call_data_copy(&mut input_data, 64);
+    
+    let proof_bytes = &input_data[..proof_len];
+    let pub_inputs_bytes = &input_data[proof_len..];
+    
+    // Verification
+    let result = verify_stark_proof(proof_bytes, pub_inputs_bytes);
+    
+    // Return bool (padded to 32 bytes)
     let mut output = [0u8; 32];
-    output[28..].copy_from_slice(&result.to_be_bytes());
-
-    // returning without calling this function leaves the output buffer empty
+    output[31] = result as u8;
     api::return_value(ReturnFlags::empty(), &output);
 }
 
-fn fibonacci(n: u32) -> u32 {
-    if n == 0 {
-        0
-    } else if n == 1 {
-        1
-    } else {
-        fibonacci(n - 1) + fibonacci(n - 2)
+fn verify_stark_proof(proof_bytes: &[u8], pub_inputs_bytes: &[u8]) -> bool {
+    // Deserialize proof and public inputs
+    let proof = match winterfell::Proof::from_bytes(proof_bytes) {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    
+    let pub_inputs = match bincode::deserialize(pub_inputs_bytes) {
+        Ok(i) => i,
+        Err(_) => return false,
+    };
+    
+    // Perform verification
+    verify::<
+        LinearRegressionAir,
+        Blake3_256<BaseElement>,
+        DefaultRandomCoin<Blake3_256<BaseElement>>,
+        MerkleTree<Blake3_256<BaseElement>>
+    >(proof, pub_inputs, &AcceptableOptions::MinConjecturedSecurity(95)).is_ok()
+}
+
+#[derive(Clone, Debug)]
+pub struct LinearRegressionInputs {
+    pub x_value: BaseElement,
+    pub predicted_y: BaseElement,
+    pub sample_x_values: Vec<BaseElement>,
+    pub sample_y_values: Vec<BaseElement>,
+}
+
+impl ToElements<BaseElement> for LinearRegressionInputs {
+    fn to_elements(&self) -> Vec<BaseElement> {
+        let mut elements = vec![self.x_value, self.predicted_y];
+        elements.extend(&self.sample_x_values);
+        elements.extend(&self.sample_y_values);
+        elements
     }
 }
+
+pub struct LinearRegressionAir {
+    context: AirContext<BaseElement>,
+    x_value: BaseElement,
+    predicted_y: BaseElement,
+    sample_x_values: Vec<BaseElement>,
+    sample_y_values: Vec<BaseElement>,
+    num_samples: usize,
+}
+
+impl Air for LinearRegressionAir {
+    type BaseField = BaseElement;
+    type PublicInputs = LinearRegressionInputs;
+
+    fn new(trace_info: TraceInfo, pub_inputs: LinearRegressionInputs, options: ProofOptions) -> Self {
+        // Our trace has 4 columns: slope (m), intercept (b), x_input, y_output
+        assert_eq!(4, trace_info.width());
+        
+        let num_samples = pub_inputs.sample_x_values.len();
+        assert_eq!(num_samples, pub_inputs.sample_y_values.len(), "Sample arrays must have equal length");
+        
+        // Constraints:
+        // 1. Linear relationship: y = mx + b (degree 2: multiplication of slope * x)
+        // 2. Slope consistency (degree 1: next_slope - slope = 0)
+        // 3. Intercept consistency (degree 1: next_intercept - intercept = 0)
+        let degrees = vec![
+            TransitionConstraintDegree::new(2), // Linear constraint: y - mx - b = 0
+            TransitionConstraintDegree::new(1), // Slope consistency
+            TransitionConstraintDegree::new(1), // Intercept consistency
+        ];
+        
+        // Assertions for sample points and prediction
+        let num_assertions = 2 * num_samples + 2; // x,y pairs for samples + prediction x,y
+        
+        LinearRegressionAir {
+            context: AirContext::new(trace_info, degrees, num_assertions, options),
+            x_value: pub_inputs.x_value,
+            predicted_y: pub_inputs.predicted_y,
+            sample_x_values: pub_inputs.sample_x_values,
+            sample_y_values: pub_inputs.sample_y_values,
+            num_samples,
+        }
+    }
+
+    fn evaluate_transition<E: FieldElement + From<Self::BaseField>>(
+        &self,
+        frame: &EvaluationFrame<E>,
+        _periodic_values: &[E],
+        result: &mut [E],
+    ) {
+        // Extract current state: [slope, intercept, x, y]
+        let slope = frame.current()[0];
+        let intercept = frame.current()[1];
+        let x = frame.current()[2];
+        let y = frame.current()[3];
+        
+        // Extract next state
+        let next_slope = frame.next()[0];
+        let next_intercept = frame.next()[1];
+        
+        // Constraint 1: Linear relationship y = mx + b
+        // This ensures y - mx - b = 0
+        result[0] = y - slope * x - intercept;
+        
+        // Constraint 2: Slope must remain constant across all steps
+        result[1] = next_slope - slope;
+        
+        // Constraint 3: Intercept must remain constant across all steps  
+        result[2] = next_intercept - intercept;
+    }
+
+    fn get_assertions(&self) -> Vec<Assertion<Self::BaseField>> {
+        let mut assertions = Vec::new();
+        
+        // Assert that each sample point is correctly represented in the trace
+        for i in 0..self.num_samples {
+            // Assert x value at step i
+            assertions.push(Assertion::single(2, i, self.sample_x_values[i]));
+            // Assert y value at step i  
+            assertions.push(Assertion::single(3, i, self.sample_y_values[i]));
+        }
+        
+        // Assert the final prediction at the prediction step
+        let prediction_step = self.num_samples;
+        assertions.push(Assertion::single(2, prediction_step, self.x_value));
+        assertions.push(Assertion::single(3, prediction_step, self.predicted_y));
+        
+        assertions
+    }
+
+    fn context(&self) -> &AirContext<Self::BaseField> {
+        &self.context
+    }
+}
+
