@@ -19,7 +19,7 @@ As a practical demo, this project verifies a **STARK proof for a linear regressi
 
 - ✅ A fully integrated dual-runtime DApp using AssetHub
 
-- ✅ On-chain Merkle verification, Blake3 hashing, and custom finite field math
+- ✅ On-chain **Merkle verification, Blake3 hashing, and custom finite field math**
 
 - ✅ Real-world demo: verifying a linear regression STARK proof
 
