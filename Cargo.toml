@@ -28,12 +28,6 @@ uapi = { package = "pallet-revive-uapi", git = "https://github.com/paritytech/po
 
 #
 winterfell = { version = "0.12.0", default-features = false } 
-
-# Serde & Bincode for serialization of pub inputs
-serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
-bincode = { version = "1.3", default-features = false }
+static-alloc = "0.2.5"
 
 
-[features]
-default = []
-std = []  # Keep until full no_std transition if necessary

@@ -3,8 +3,7 @@ target = "./.cargo/riscv64emac-unknown-none-polkavm.json"
 
 rustflags = [
     "-C", "target-feature=+crt-static",
-    "-C", "link-arg=-zstack-size=32768",      # 32KB stack for f128 operations
-    "-C", "link-arg=--export=__heap_base",    # Required for allocator
+    "-C", "link-arg=-zstack-size=32768",      # 32KB stack for f128 operations   
     "-C", "link-arg=--no-gc-sections"         # Preserve all verification symbols
 ]
 
