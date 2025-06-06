@@ -73,16 +73,16 @@ The public inputs are hardcoded into the Rust verifier contract(there were probl
 The proof is deserialized on-chain using Winterfell-compatible layout 
 
 ## 🧩 From Hardcoded to General-Purpose STARK Verifier
-## While this demo uses hardcoded public inputs for simplicity, once generalized deserialization is implemented in the Rust verifier contract (handling input formats):
-## ✅ This framework can become a universal on-chain STARK verifier for any AIR program.
+While this demo uses hardcoded public inputs for simplicity, once generalized deserialization is implemented in the Rust verifier contract (handling input formats):
+✅ This framework can become a universal on-chain STARK verifier for any AIR program.
 
-That means you’ll be able to:
+## That means you’ll be able to:
 
--Upload and verify any kind of STARK proof (ML, fraud proofs, off-chain analytics, etc.)
+- Upload and verify any kind of STARK proof (ML, fraud proofs, off-chain analytics, etc.)
 
--Keep all business logic in Solidity — rewards, access, asset transfers, etc.
+- Keep all business logic in Solidity — rewards, access, asset transfers, etc.
 
--Build full DApps where Rust handles heavy computation, and Solidity handles everything else
+- Build full DApps where Rust handles heavy computation, and Solidity handles everything else
 
--This unlocks a huge range of use cases, including ZK gaming, verifiable oracles, proof-of-compute systems, and modular AI inference on-chain — all powered by PolkaVM + AssetHub.
+- This unlocks a huge range of use cases, including ZK gaming, verifiable oracles, proof-of-compute systems, and modular AI inference on-chain — all powered by PolkaVM + AssetHub.
 
