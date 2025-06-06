@@ -73,8 +73,7 @@ The public inputs are hardcoded into the Rust verifier contract(there were probl
 The proof is deserialized on-chain using Winterfell-compatible layout 
 
 ## 🧩 From Hardcoded to General-Purpose STARK Verifier
-While this demo uses hardcoded public inputs for simplicity, once generalized deserialization is implemented in the Rust verifier contract (handling input formats):
-
+## While this demo uses hardcoded public inputs for simplicity, once generalized deserialization is implemented in the Rust verifier contract (handling input formats):
 ## ✅ This framework can become a universal on-chain STARK verifier for any AIR program.
 
 That means you’ll be able to:
