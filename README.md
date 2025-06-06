@@ -37,9 +37,6 @@ As a proof-of-concept, this project shows how you can:
 - This approach is ideal for verifiable compute, ML inference, or ZK analytics.
 
 ```📦 Architecture
-plaintext
-Copy
-Edit
 +---------------------------+           +------------------------------+
 |   Solidity Contract       |  calls    |   Rust STARK Verifier        |
 | (Business Logic Layer)    +---------->+ (RISC-V no_std Smart Contract)|
